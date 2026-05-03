@@ -85,7 +85,7 @@ pip install -U yt-dlp
 
 # 4. 在本地构建 macOS Native Host 安装包
 ./native-host/build-macos-zip.sh <YOUR_EXTENSION_ID> <VERSION>
-# 示例：./native-host/build-macos-zip.sh abcdefghijklmnopabcdefghijklmnop 1.0.6
+# 示例：./native-host/build-macos-zip.sh ccdkjblfcffhfjaofhmfenkemkdapfnp 1.0.7-local
 
 # 5. 安装刚刚本地构建出来的包
 cd native-host
@@ -97,6 +97,7 @@ chmod +x install_mac.sh
 - `build-macos-zip.sh` 会输出 `native-host/video-text-host-macos.zip`。
 - `build-macos-zip.sh` 也会在打包前升级 `yt-dlp`，与正式发布流程保持一致。
 - `install_mac.sh` 如果在当前目录发现这个本地 ZIP，会优先使用它，不会再去 GitHub 下载。
+- 如果前端新增了后端接口（例如本地文件上传使用的 `POST /api/tasks/upload`），必须重新构建并安装这个本地 ZIP；只安装 GitHub 最新发布包可能会运行旧版后端，导致 `405 Method Not Allowed`。
 - 安装完成后，请到 `chrome://extensions` 里刷新扩展，再重新测试。
 
 Windows 本地构建完成后，可以用脚本替换 `%APPDATA%\VideoTextHost` 中的后端产物，并注册 Chrome/Edge Native Host：
@@ -317,7 +318,7 @@ python mini_transcriber.py
      - 这是 Chrome 真正读取的配置文件
      - 在安装时从源文件复制而来
 
-   **问题所在**：如果你更新了扩展或使用不同的 ID 重新安装，源文件会被更新，但 Chrome 的文件可能仍然保留旧的 ID。
+   **问题所在**：如果你更新了扩展或使用不同的 ID 重新安装，源文件会被更新，但 Chrome 的文件可能仍然保留旧的 ID。macOS 上还要注意：运行发布版 `install_mac.sh` 会从发布包内的 `extension-id.txt` 生成 manifest，如果你加载的是本地开发扩展，发布包 ID 可能覆盖本地固定 ID，导致侧边栏显示“本地服务未安装”。
 
    **解决方法**：
    ```bash
@@ -325,11 +326,16 @@ python mini_transcriber.py
    cat ~/Library/Application\ Support/VideoTextHost/manifest.json
    cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.video_text.transcriber.json
 
+   # 如果发布版安装脚本写入了错误 ID，先把源 manifest 改回当前扩展 ID
+   # 把 <当前扩展ID> 替换为 chrome://extensions 中显示的 ID
+   export EXT_ID="<当前扩展ID>"
+   node -e "const fs=require('fs'); const host=process.env.HOME+'/Library/Application Support/VideoTextHost'; const manifest={name:'com.video_text.transcriber',description:'VideoText Transcriber Native Host',path:host+'/host-macos.sh',type:'stdio',allowed_origins:['chrome-extension://'+process.env.EXT_ID+'/']}; fs.writeFileSync(host+'/manifest.json', JSON.stringify(manifest,null,2)+'\n');"
+
    # 如果不一致，复制正确的文件：
    cp ~/Library/Application\ Support/VideoTextHost/manifest.json \
       ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.video_text.transcriber.json
 
-   # 然后在 chrome://extensions 中重新加载扩展
+   # 然后完全退出 Chrome，重新打开，并在 chrome://extensions 中重新加载扩展
    ```
 
 2. **脚本没有执行权限**
@@ -343,6 +349,24 @@ python mini_transcriber.py
    ```bash
    cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.video_text.transcriber.json
    ```
+
+4. **本地文件上传返回 `405 Method Not Allowed`**
+
+   这通常表示 Chrome 当前连接的是旧版打包后端，而不是包含上传接口的新版后端。检查当前服务版本和实际路由：
+   ```bash
+   curl http://127.0.0.1:8001/health
+   curl http://127.0.0.1:8001/openapi.json | grep /api/tasks/upload
+   ```
+
+   如果 `/api/tasks/upload` 不存在，请用当前源码重新打包并安装 macOS Native Host：
+   ```bash
+   source .venv/bin/activate
+   ./native-host/build-macos-zip.sh ccdkjblfcffhfjaofhmfenkemkdapfnp 1.0.7-local
+   cd native-host
+   ./install_mac.sh
+   ```
+
+   安装后完全退出 Chrome，重新打开，并在 `chrome://extensions` 里重新加载扩展。
 
 ### 权限被拒绝（Permission Denied）
 

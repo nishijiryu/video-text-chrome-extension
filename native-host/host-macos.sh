@@ -55,7 +55,10 @@ fi
 
 if [ "${USE_BIN}" -eq 0 ]; then
   if [ -z "${PYTHON_BIN}" ]; then
-    if command -v python3 >/dev/null 2>&1; then
+    SOURCE_VENV_PYTHON="${SCRIPT_DIR}/../.venv/bin/python"
+    if [ -x "${SOURCE_VENV_PYTHON}" ]; then
+      PYTHON_BIN="${SOURCE_VENV_PYTHON}"
+    elif command -v python3 >/dev/null 2>&1; then
       PYTHON_BIN="$(command -v python3)"
     elif [ -x "/usr/bin/python3" ]; then
       PYTHON_BIN="/usr/bin/python3"
@@ -70,7 +73,12 @@ fi
 
 export PYTHON_BIN
 # Keep the service script alongside this host for a stable relative layout.
-export TRANSCRIBER_SCRIPT="${TRANSCRIBER_SCRIPT:-${SCRIPT_DIR}/mini_transcriber.py}"
+SOURCE_TRANSCRIBER_SCRIPT="${SCRIPT_DIR}/../mini_transcriber.py"
+if [ -z "${TRANSCRIBER_SCRIPT:-}" ] && [ ! -f "${SCRIPT_DIR}/mini_transcriber.py" ] && [ -f "${SOURCE_TRANSCRIBER_SCRIPT}" ]; then
+  export TRANSCRIBER_SCRIPT="${SOURCE_TRANSCRIBER_SCRIPT}"
+else
+  export TRANSCRIBER_SCRIPT="${TRANSCRIBER_SCRIPT:-${SCRIPT_DIR}/mini_transcriber.py}"
+fi
 export TRANSCRIBER_BIN
 if [ -z "${TRANSCRIBER_TOKEN_PATH:-}" ]; then
   BIN_DIR="$(dirname "${TRANSCRIBER_BIN}")"

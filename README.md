@@ -87,7 +87,7 @@ pip install -U yt-dlp
 
 # 4. Build the macOS Native Host package locally
 ./native-host/build-macos-zip.sh <YOUR_EXTENSION_ID> <VERSION>
-# Example: ./native-host/build-macos-zip.sh abcdefghijklmnopabcdefghijklmnop 1.0.6
+# Example: ./native-host/build-macos-zip.sh ccdkjblfcffhfjaofhmfenkemkdapfnp 1.0.7-local
 
 # 5. Install the locally built package
 cd native-host
@@ -99,6 +99,7 @@ Notes:
 - `build-macos-zip.sh` outputs `native-host/video-text-host-macos.zip`.
 - `build-macos-zip.sh` also upgrades `yt-dlp` before packaging, matching the release workflow.
 - `install_mac.sh` will use that local ZIP first if it exists in the current directory, so it will not download from GitHub.
+- If the frontend depends on a new backend route, such as local file upload via `POST /api/tasks/upload`, rebuild and install this local ZIP. Installing the latest GitHub release may run an older backend and return `405 Method Not Allowed`.
 - After installation, reload the extension in `chrome://extensions` before retesting.
 
 For Windows local builds, update the installed Native Host files and register Chrome/Edge with:
@@ -311,7 +312,7 @@ This project uses a hybrid architecture to combine the convenience of a browser 
      - This is what Chrome actually reads
      - Copied from the source file during installation
 
-   **The Problem**: If you updated the extension or reinstalled with a different ID, the source file gets updated but Chrome's file might still have the old ID.
+   **The Problem**: If you updated the extension or reinstalled with a different ID, the source file gets updated but Chrome's file might still have the old ID. On macOS, also note that the release `install_mac.sh` generates the manifest from the packaged `extension-id.txt`; if you are testing a local development extension, the release ID can overwrite the local fixed ID and make the side panel report "Native host not installed".
 
    **Solution**:
    ```bash
@@ -319,11 +320,16 @@ This project uses a hybrid architecture to combine the convenience of a browser 
    cat ~/Library/Application\ Support/VideoTextHost/manifest.json
    cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.video_text.transcriber.json
 
+   # If the release installer wrote the wrong ID, rewrite the source manifest
+   # Replace <CURRENT_EXTENSION_ID> with the ID shown in chrome://extensions
+   export EXT_ID="<CURRENT_EXTENSION_ID>"
+   node -e "const fs=require('fs'); const host=process.env.HOME+'/Library/Application Support/VideoTextHost'; const manifest={name:'com.video_text.transcriber',description:'VideoText Transcriber Native Host',path:host+'/host-macos.sh',type:'stdio',allowed_origins:['chrome-extension://'+process.env.EXT_ID+'/']}; fs.writeFileSync(host+'/manifest.json', JSON.stringify(manifest,null,2)+'\n');"
+
    # If they differ, copy the correct one:
    cp ~/Library/Application\ Support/VideoTextHost/manifest.json \
       ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.video_text.transcriber.json
 
-   # Then reload your extension in chrome://extensions
+   # Then fully quit Chrome, reopen it, and reload your extension in chrome://extensions
    ```
 
 2. **Script Not Executable**
@@ -337,6 +343,24 @@ This project uses a hybrid architecture to combine the convenience of a browser 
    ```bash
    cat ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.video_text.transcriber.json
    ```
+
+4. **Local file upload returns `405 Method Not Allowed`**
+
+   This usually means Chrome is connected to an older packaged backend that does not include the upload route. Check the active service version and routes:
+   ```bash
+   curl http://127.0.0.1:8001/health
+   curl http://127.0.0.1:8001/openapi.json | grep /api/tasks/upload
+   ```
+
+   If `/api/tasks/upload` is missing, rebuild and install the macOS Native Host from the current source:
+   ```bash
+   source .venv/bin/activate
+   ./native-host/build-macos-zip.sh ccdkjblfcffhfjaofhmfenkemkdapfnp 1.0.7-local
+   cd native-host
+   ./install_mac.sh
+   ```
+
+   Then fully quit Chrome, reopen it, and reload the extension in `chrome://extensions`.
 
 #### Permission Denied
 
