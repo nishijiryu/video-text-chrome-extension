@@ -5,6 +5,7 @@
   "description": "__MSG_extDescription__",
   "default_locale": "zh_CN",
   "homepage_url": "https://github.com/kangchainx/video-text-chrome-extension",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv2hlF9bokqxHtoYBlKQHyEQd7oFG4XScF88d/sq8TdYU7D97jTVbKRH8UT67Wd39SBWPmSpQHwElpvwRgIz8Bklq5r/I1MUwdL5ubSpTtJPSnfIiNbhD0WsrvKNJPS8EVxch9/UebUhEI+HNAtpJWhWBof6cRcstGtgF8v5avKi79LIWeCluZZg5TJdjnJAHxEXFiXaqq4iM7dYO1aPHjPgiQKiGW0E6M8UCpZF/OLb5HJW5BrnfVN+vEef49xmihTgfDoDhXQJ6j25OdiqlBFkneUWFbqczMLbsFKFLnUUJ+zdfpsHtojf8E19ROaarYUyC6yULVJcGh0kMV5IKzQIDAQAB",
   "permissions": [
     "sidePanel",
     "activeTab",

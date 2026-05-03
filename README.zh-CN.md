@@ -58,6 +58,14 @@ npm run dev
 # 在 chrome://extensions 中加载 'dist' 目录
 ```
 
+本地构建现在使用固定 Chrome 扩展 ID：
+
+```text
+ccdkjblfcffhfjaofhmfenkemkdapfnp
+```
+
+该 ID 来自 `manifest.json` 的 `key` 字段，并同步保存在 `.github/EXTENSION_ID`。Native Host manifest 的 `allowed_origins` 必须与当前浏览器中的扩展 ID 一致。
+
 #### 2. 本地服务设置
 
 **前提条件**：Python 3.10+，Node.js（用于 YouTube 验证）
@@ -91,6 +99,18 @@ chmod +x install_mac.sh
 - `install_mac.sh` 如果在当前目录发现这个本地 ZIP，会优先使用它，不会再去 GitHub 下载。
 - 安装完成后，请到 `chrome://extensions` 里刷新扩展，再重新测试。
 
+Windows 本地构建完成后，可以用脚本替换 `%APPDATA%\VideoTextHost` 中的后端产物，并注册 Chrome/Edge Native Host：
+
+```powershell
+.\native-host\update_local_win.ps1 -SourceDir .\native-host\dist
+```
+
+如果正在测试一个已经安装、且 ID 与固定 ID 不同的未打包扩展，请显式传入当前浏览器显示的扩展 ID：
+
+```powershell
+.\native-host\update_local_win.ps1 -ExtensionId <当前扩展ID>
+```
+
 如果你只是开发调试，想直接从源码运行 Python 服务，可以继续使用下面这套源码模式：
 
 ```bash
@@ -120,12 +140,24 @@ python mini_transcriber.py
 
 1.  **打开视频**：导航到 YouTube 或 Bilibili 视频页面。
 2.  **打开面板**：点击扩展图标打开侧边栏。
-3.  **转录**：点击 **"创建转写任务"**。
-4.  **等待 & 下载**：任务在后台运行。完成后，点击 **"下载 TXT"**。
+3.  **转录在线视频**：点击 **"创建转写任务"**，扩展会下载并转录当前视频。
+4.  **转录本地文件**：点击 **"本地文件"**，选择本地音频或视频文件；扩展会调用本地服务接口 `POST /api/tasks/upload` 创建任务。
+5.  **等待 & 下载**：任务在后台运行。完成后，点击 **"下载 TXT"**。
 
 ---
 
 ## 📝 版本历史
+
+### v1.0.8 (2026-05-04)
+
+**本地文件转录**
+- 侧边栏新增 **"本地文件"** 入口，可选择本地音频或视频文件转录。
+- 后端新增 `POST /api/tasks/upload`，用于接收本地文件并创建转录任务。
+
+**Windows Native Host 稳定性**
+- 通过 `manifest.json` 的 `key` 固定本地构建扩展 ID，减少 `allowed_origins` 不匹配导致的“本地服务未安装”问题。
+- 新增 `native-host/update_local_win.ps1`，用于刷新 `%APPDATA%\VideoTextHost`、写入 manifest，并注册 Chrome/Edge。
+- Windows 无控制台打包时禁用 Uvicorn 默认日志配置，避免 `Unable to configure formatter 'default'` 启动错误。
 
 ### v1.0.7 (2026-03-24)
 
@@ -269,6 +301,13 @@ python mini_transcriber.py
 
 2. **扩展 ID 不匹配**（最常见）
 
+   本地开发构建已固定扩展 ID 为 `ccdkjblfcffhfjaofhmfenkemkdapfnp`。如果 `chrome://extensions` 中显示的是另一个 ID，需要重新安装包含固定 `manifest.json` key 的扩展，或用当前 ID 重新注册 Native Host。
+
+   Windows 可直接运行：
+   ```powershell
+   .\native-host\update_local_win.ps1 -ExtensionId <当前扩展ID>
+   ```
+
    系统中有**两个** manifest.json 文件：
    - **源文件**：`~/Library/Application Support/VideoTextHost/manifest.json`（macOS）
      - 由安装程序生成，包含正确的扩展 ID
@@ -314,6 +353,10 @@ python mini_transcriber.py
 -   **YouTube**：通常无需 cookies，使用移动端客户端模拟即可正常工作。
 -   **Bilibili 1080p**：需要 cookies 支持。扩展需要读取 `.bilibili.com` 域的 Cookie 权限。
 -   查看 `temp/service.log` 文件获取详细错误信息。
+
+### Windows 打包版启动时报 Uvicorn logging 错误
+
+如果无控制台打包产物启动时出现 `Unable to configure formatter 'default'`，通常是因为窗口模式下 `sys.stderr` 为 `None`。当前代码已在 `uvicorn.run(...)` 中禁用默认 `log_config`，重新打包并替换 `%APPDATA%\VideoTextHost` 后即可生效。
 
 ### 首次转录很慢 / 找不到模型
 

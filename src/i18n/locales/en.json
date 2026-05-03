@@ -39,6 +39,7 @@
   },
   "task": {
     "create": "Create Task",
+    "localFile": "Local File",
     "clearQueue": "Clear Queue",
     "inProgress": "In Progress",
     "completed": "Completed",

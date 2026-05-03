@@ -13,7 +13,7 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request
+from fastapi import Body, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -409,6 +409,13 @@ def _get_whisper_model():
 
 def _cookiefile_path(task_id: str) -> Path:
     return TEMP_DIR / f"cookies-{task_id}.txt"
+
+
+def _uploaded_audio_path(task_id: str, filename: str) -> Path:
+    suffix = Path(filename or "").suffix.lower()
+    if not suffix or len(suffix) > 16:
+        suffix = ".media"
+    return TEMP_DIR / f"upload-{task_id}{suffix}"
 
 
 def _write_cookies_file(cookies: List[CookieItem], path: Path) -> None:
@@ -1132,21 +1139,40 @@ def _process_task(task_id: str) -> None:
     if not task:
         return
 
-    _update_task(
-        task_id,
-        status=TASK_STATUS_DOWNLOADING,
-        downloadProgress=0,
-        transcribeProgress=0,
-        errorCode=None,
-        errorMessage=None,
-    )
+    is_local_file = str(task.get("url") or "").startswith("local-file://")
+    if is_local_file:
+        _update_task(
+            task_id,
+            status=TASK_STATUS_TRANSCRIBING,
+            downloadProgress=100,
+            transcribeProgress=0,
+            errorCode=None,
+            errorMessage=None,
+        )
+    else:
+        _update_task(
+            task_id,
+            status=TASK_STATUS_DOWNLOADING,
+            downloadProgress=0,
+            transcribeProgress=0,
+            errorCode=None,
+            errorMessage=None,
+        )
 
     current_phase = TASK_STATUS_DOWNLOADING
     try:
-        download_start = time.monotonic()
-        audio_path = _download_audio(task_id, task["url"], task.get("cookiefilePath"))
-        _log_slow("DOWNLOAD", download_start, f"task={task_id}")
-        _update_task(task_id, audioPath=str(audio_path))
+        if is_local_file:
+            audio_path_value = task.get("audioPath")
+            if not audio_path_value:
+                raise RuntimeError("Local file is missing")
+            audio_path = Path(audio_path_value)
+            if not audio_path.exists():
+                raise RuntimeError("Local file no longer exists")
+        else:
+            download_start = time.monotonic()
+            audio_path = _download_audio(task_id, task["url"], task.get("cookiefilePath"))
+            _log_slow("DOWNLOAD", download_start, f"task={task_id}")
+            _update_task(task_id, audioPath=str(audio_path))
 
         if _is_cancelled(task_id):
             raise TaskCancelled("download canceled")
@@ -1155,7 +1181,12 @@ def _process_task(task_id: str) -> None:
         # We don't need to manually set it here, which caused a deadlock (self-waiting)
 
         current_phase = TASK_STATUS_TRANSCRIBING
-        _update_task(task_id, status=TASK_STATUS_TRANSCRIBING, transcribeProgress=0)
+        _update_task(
+            task_id,
+            status=TASK_STATUS_TRANSCRIBING,
+            downloadProgress=100 if is_local_file else task.get("downloadProgress", 0),
+            transcribeProgress=0,
+        )
         transcribe_start = time.monotonic()
         text = _transcribe_audio(task_id, audio_path)
         _log_slow("TRANSCRIBE", transcribe_start, f"task={task_id}")
@@ -1191,7 +1222,10 @@ def _process_task(task_id: str) -> None:
             errorMessage=message,
         )
     finally:
-        _update_task(task_id, downloadProgress=task.get("downloadProgress", 0))
+        _update_task(
+            task_id,
+            downloadProgress=100 if is_local_file else task.get("downloadProgress", 0),
+        )
 
 
 def _worker_loop() -> None:
@@ -1273,6 +1307,57 @@ def create_task(
         "resultFilename": None,
         "audioPath": None,
         "cookiefilePath": cookiefile_path,
+        "cancelRequested": False,
+        "queueOrder": _next_queue_order(),
+    }
+
+    with lock:
+        tasks[task_id] = task
+        _db_upsert_task(task)
+
+    _enqueue(task_id)
+    snapshot = _snapshot_tasks()
+    return JSONResponse({"task": _task_public_view(task, {}), "snapshot": snapshot})
+
+
+@app.post("/api/tasks/upload")
+async def create_upload_task(
+    request: Request,
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    token: Optional[str] = Query(None),
+):
+    _require_token(request, token)
+    task_id = uuid.uuid4().hex
+    original_filename = file.filename or "local-file"
+    display_title = title or original_filename
+    audio_path = _uploaded_audio_path(task_id, original_filename)
+    try:
+        with audio_path.open("wb") as handle:
+            shutil.copyfileobj(file.file, handle)
+    finally:
+        await file.close()
+    if not audio_path.exists() or audio_path.stat().st_size == 0:
+        audio_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    now = time.time()
+    task = {
+        "id": task_id,
+        "url": f"local-file://{original_filename}",
+        "title": display_title,
+        "site": "local",
+        "status": TASK_STATUS_QUEUED,
+        "createdAt": now,
+        "updatedAt": now,
+        "downloadProgress": 100,
+        "transcribeProgress": 0,
+        "errorCode": None,
+        "errorMessage": None,
+        "resultPath": None,
+        "resultFilename": None,
+        "audioPath": str(audio_path),
+        "cookiefilePath": None,
         "cancelRequested": False,
         "queueOrder": _next_queue_order(),
     }
@@ -1459,7 +1544,15 @@ if __name__ == "__main__":
     os.environ.pop("WEB_CONCURRENCY", None)
     os.environ.pop("UVICORN_WORKERS", None)
     try:
-        uvicorn.run(app, host="127.0.0.1", port=SERVICE_PORT, workers=1, reload=False)
+        uvicorn.run(
+            app,
+            host="127.0.0.1",
+            port=SERVICE_PORT,
+            workers=1,
+            reload=False,
+            log_config=None,
+            access_log=False,
+        )
     except Exception as exc:
         _log(f"SERVICE_CRASH error={exc}")
         raise

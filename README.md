@@ -19,6 +19,8 @@ An advanced Chrome Side Panel tool that turns videos into text using local AI po
 
 Unlike cloud-based services with time limits and privacy risks, this extension runs entirely on your machine.
 
+-   **Local File Transcription**: Upload a local audio or video file directly from the Side Panel and transcribe it with the same local backend.
+
 -   🔒 **Privacy First**: All data stays on your `localhost`. No audio is ever uploaded to the cloud.
 -   ♾️ **Unlimited**: No monthly limits, no file size limits. Transcribe 5-hour lectures or podcasts for free.
 -   🎬 **Login Support**: download & transcribe high-quality videos (1080p+) from sites like Bilibili by reusing your browser cookies.
@@ -58,6 +60,14 @@ npm run dev
 # Load 'dist' directory in chrome://extensions
 ```
 
+The local build uses a fixed Chrome extension ID:
+
+```text
+ccdkjblfcffhfjaofhmfenkemkdapfnp
+```
+
+This ID is derived from the `key` field in `manifest.json` and is also stored in `.github/EXTENSION_ID`. Keep these values in sync with the Native Host `allowed_origins` entry.
+
 #### 2. Local Service Setup
 
 **Pre-requisites**: Python 3.10+, Node.js (for YouTube verification)
@@ -91,6 +101,14 @@ Notes:
 - `install_mac.sh` will use that local ZIP first if it exists in the current directory, so it will not download from GitHub.
 - After installation, reload the extension in `chrome://extensions` before retesting.
 
+For Windows local builds, update the installed Native Host files and register Chrome/Edge with:
+
+```powershell
+.\native-host\update_local_win.ps1 -SourceDir .\native-host\dist
+```
+
+Use `-ExtensionId <CURRENT_EXTENSION_ID>` when testing an already installed unpacked extension with a different ID. Without this argument, the script reads `.github/EXTENSION_ID` and registers the fixed local build ID.
+
 If you prefer to run the Python service directly from source during development, use the source-mode flow below:
 
 ```bash
@@ -120,12 +138,23 @@ python mini_transcriber.py
 
 1.  **Open Video**: Navigate to a YouTube or Bilibili video.
 2.  **Open Panel**: Click the extension icon to open the Side Panel.
-3.  **Transcribe**: Click **"Create Task"**.
-4.  **Wait & Download**: The task runs in the background. Once done, click **"Download TXT"**.
+3.  **Transcribe a URL**: Click **"Create Task"** to download and transcribe the current video.
+4.  **Transcribe a Local File**: Click **"Local File"**, choose an audio or video file, and the extension uploads it to the local service at `POST /api/tasks/upload`.
+5.  **Wait & Download**: The task runs in the background. Once done, click **"Download TXT"**.
 
 ---
 
 ## 📝 Version History
+
+### v1.0.8 (2026-05-04)
+
+**Local File Transcription**
+- Add a Side Panel local-file upload flow backed by `POST /api/tasks/upload`.
+
+**Windows Native Host Reliability**
+- Pin the local extension ID in `manifest.json` and `.github/EXTENSION_ID`.
+- Add `native-host/update_local_win.ps1` to refresh `%APPDATA%\VideoTextHost`, write the Native Messaging manifest, and register Chrome/Edge.
+- Disable Uvicorn's default logging config in packaged Windows builds to avoid `sys.stderr` being `None` when the executable runs windowless.
 
 ### v1.0.7 (2026-03-24)
 
@@ -270,6 +299,8 @@ This project uses a hybrid architecture to combine the convenience of a browser 
    - Edge registry key: `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.video_text.transcriber`
 
 2. **Extension ID Mismatch** (Most Common)
+
+   Local development builds are pinned to `ccdkjblfcffhfjaofhmfenkemkdapfnp`. If Chrome shows a different ID for an already installed unpacked build, re-register the Native Host with that active ID or reinstall the extension from a build that includes the fixed `manifest.json` key.
 
    There are **two** manifest.json files involved:
    - **Source file**: `~/Library/Application Support/VideoTextHost/manifest.json` (macOS)

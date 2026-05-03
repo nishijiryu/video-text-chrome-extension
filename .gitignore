@@ -31,3 +31,5 @@ RESUBMISSION_GUIDE.md
 # Extension Packages
 *.zip
 .DS_Store
+release
+AGENTS.md

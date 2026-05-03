@@ -27,6 +27,7 @@ import {
   Power,
   Sparkle,
   Trash,
+  UploadSimple,
   WarningCircle,
   X,
   XCircle,
@@ -189,6 +190,7 @@ const App: React.FC = () => {
   const healthPollRef = useRef<number | null>(null);
   const progressRef = useRef(0);
   const toastTimersRef = useRef<Map<string, number[]>>(new Map());
+  const localFileInputRef = useRef<HTMLInputElement | null>(null);
   const ensureInFlightRef = useRef<Promise<{
     port: number;
     token: string;
@@ -203,6 +205,10 @@ const App: React.FC = () => {
     if (!servicePort) return null;
     return `http://127.0.0.1:${servicePort}`;
   }, [servicePort]);
+
+  const localFileUploadLabel = i18n.language?.startsWith("zh")
+    ? "\u672c\u5730\u6587\u4ef6"
+    : t("task.localFile");
 
   const tourSteps: TourStep[] = useMemo(
     () => [
@@ -606,6 +612,48 @@ const App: React.FC = () => {
     } catch (error: any) {
       if (error.name === "AbortError") {
         throw new Error("request_timeout");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+
+  const uploadApiFetch = async (
+    path: string,
+    body: FormData,
+    credentials?: { port: number; token: string }
+  ) => {
+    const base = credentials
+      ? `http://127.0.0.1:${credentials.port}`
+      : apiBase;
+    const token = credentials?.token || serviceToken;
+    if (!base || !token) {
+      throw new Error("service_not_connected");
+    }
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => controller.abort(),
+      5 * 60 * 1000
+    );
+
+    try {
+      const response = await fetch(`${base}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || t("errors.requestFailed"));
+      }
+      return response;
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        throw new Error(t("errors.requestTimeout"));
       }
       throw error;
     } finally {
@@ -1168,6 +1216,41 @@ const App: React.FC = () => {
     } catch (error: any) {
       // Silently ignore tour_active error to avoid confusing error messages during auto tour
       if (error?.message === "tour_active") return;
+      showToast("error", error.message || t("errors.addTaskFailed"));
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
+  const handleChooseLocalFile = () => {
+    if (guardTourAction()) return;
+    localFileInputRef.current?.click();
+  };
+
+  const handleLocalFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setIsAdding(true);
+    try {
+      let credentials:
+        | { port: number; token: string; status?: string }
+        | undefined;
+      if (serviceStatus !== "ready") {
+        credentials = await ensureService(true);
+      }
+      if (modelReady === false) {
+        setModelLoading(true);
+      }
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", file.name);
+      await uploadApiFetch("/api/tasks/upload", formData, credentials);
+      setFilterAndReset("active");
+    } catch (error: any) {
       showToast("error", error.message || t("errors.addTaskFailed"));
     } finally {
       setIsAdding(false);
@@ -1788,23 +1871,43 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <div className="flex items-center justify-between mb-5">
-          <button
-            onClick={handleAddTask}
-            disabled={isAdding || nativeHostInstalled === false}
-            ref={createButtonRef}
-            className="group flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-white text-sm font-bold shadow-lg shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 hover:bg-blue-700 active:scale-95"
-          >
-            {isAdding ? (
-              <ArrowClockwise size={16} className="animate-spin" />
-            ) : (
-              <Plus
-                size={18}
-                className="transition-transform duration-300 group-hover:rotate-90"
-              />
-            )}
-            {t("task.create")}
-          </button>
+        <div className="flex items-center justify-between gap-3 mb-5">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              onClick={handleAddTask}
+              disabled={isAdding || nativeHostInstalled === false}
+              ref={createButtonRef}
+              className="group flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2.5 text-white text-sm font-bold shadow-lg shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 hover:bg-blue-700 active:scale-95"
+            >
+              {isAdding ? (
+                <ArrowClockwise size={16} className="animate-spin" />
+              ) : (
+                <Plus
+                  size={18}
+                  className="transition-transform duration-300 group-hover:rotate-90"
+                />
+              )}
+              {t("task.create")}
+            </button>
+            <button
+              onClick={handleChooseLocalFile}
+              disabled={isAdding || nativeHostInstalled === false}
+              className="group flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-600 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 hover:border-indigo-200 hover:text-indigo-600 active:scale-95"
+              title={localFileUploadLabel}
+            >
+              <UploadSimple size={18} weight="bold" />
+              <span className="hidden min-[380px]:inline">
+                {localFileUploadLabel}
+              </span>
+            </button>
+            <input
+              ref={localFileInputRef}
+              type="file"
+              accept="audio/*,video/*,.mp3,.m4a,.wav,.flac,.aac,.ogg,.mp4,.m4v,.mov,.webm,.mkv"
+              className="hidden"
+              onChange={handleLocalFileChange}
+            />
+          </div>
           <button
             onClick={handleClearQueue}
             ref={clearQueueRef}
@@ -1974,6 +2077,10 @@ const App: React.FC = () => {
               const isWaiting = displayStatus === "queued" && !isCurrent;
               const downloadDone = task.downloadProgress >= 100;
               const transcribeDone = task.transcribeProgress >= 100;
+              const isLocalFile = task.url.startsWith("local-file://");
+              const taskSourceLabel = isLocalFile
+                ? localFileUploadLabel
+                : task.url;
               return (
                 <div
                   key={task.id}
@@ -2075,14 +2182,23 @@ const App: React.FC = () => {
                             {task.title || task.url}
                           </h3>
                           <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-3">
-                            <Link
-                              size={14}
-                              className={
-                                isWaiting ? "text-slate-400" : "text-blue-400"
-                              }
-                            />
+                            {isLocalFile ? (
+                              <FileText
+                                size={14}
+                                className={
+                                  isWaiting ? "text-slate-400" : "text-blue-400"
+                                }
+                              />
+                            ) : (
+                              <Link
+                                size={14}
+                                className={
+                                  isWaiting ? "text-slate-400" : "text-blue-400"
+                                }
+                              />
+                            )}
                             <span className="truncate max-w-[200px]">
-                              {task.url}
+                              {taskSourceLabel}
                             </span>
                           </div>
 
@@ -2176,20 +2292,34 @@ const App: React.FC = () => {
                           </h3>
                         </div>
 
-                        <a
-                          href={task.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className={`flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-600 hover:underline transition-colors mb-1 ${
-                            displayStatus === "canceled" ||
-                            displayStatus === "canceling"
-                              ? "pointer-events-none opacity-50"
-                              : ""
-                          }`}
-                        >
-                          <Link size={32} />
-                          <span className="truncate">{task.url}</span>
-                        </a>
+                        {isLocalFile ? (
+                          <div
+                            className={`flex items-center gap-1 text-[11px] text-slate-400 transition-colors mb-1 ${
+                              displayStatus === "canceled" ||
+                              displayStatus === "canceling"
+                                ? "opacity-50"
+                                : ""
+                            }`}
+                          >
+                            <FileText size={32} />
+                            <span className="truncate">{taskSourceLabel}</span>
+                          </div>
+                        ) : (
+                          <a
+                            href={task.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className={`flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-600 hover:underline transition-colors mb-1 ${
+                              displayStatus === "canceled" ||
+                              displayStatus === "canceling"
+                                ? "pointer-events-none opacity-50"
+                                : ""
+                            }`}
+                          >
+                            <Link size={32} />
+                            <span className="truncate">{task.url}</span>
+                          </a>
+                        )}
 
                         <div className="flex items-center gap-3 text-[10px] text-slate-400 font-medium">
                           <span className="flex items-center gap-1">
