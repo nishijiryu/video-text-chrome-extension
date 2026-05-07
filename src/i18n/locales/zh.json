@@ -35,7 +35,8 @@
     "cannotConnectService": "无法连接本地服务",
     "serviceUnavailable": "本地服务不可用",
     "notVideoPage": "请先打开视频播放页面",
-    "nativeHostNotInstalled": "未安装本地服务"
+    "nativeHostNotInstalled": "未安装本地服务",
+    "chatGPTOpenFailed": "打开 ChatGPT 失败"
   },
   "task": {
     "create": "添加任务",
@@ -57,6 +58,8 @@
     "failed": "任务失败",
     "retry": "重试",
     "downloadTxt": "下载 TXT",
+    "summarizeWithChatGPT": "用 ChatGPT 总结",
+    "copiedForChatGPT": "已复制总结提示词，请在 ChatGPT 输入框粘贴",
     "delete": "删除",
     "processing": "处理中...",
     "waitN": "等待 #{{n}}",

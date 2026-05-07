@@ -1560,6 +1560,137 @@ const App: React.FC = () => {
     });
   };
 
+  const buildChatGPTSummaryPrompt = (task: TaskItem, resultText: string) => {
+    return [
+      "请总结下面这段视频/音频转写内容，输出：",
+      "1. 核心摘要",
+      "2. 内容详细总结",
+      "3. 简单评价",
+      "",
+      `标题：${task.title || ""}`,
+      `来源：${task.url || ""}`,
+      "",
+      "转写内容：",
+      resultText,
+    ].join("\n");
+  };
+
+  const copyTextToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      const textArea = document.createElement("textarea");
+      textArea.value = text;
+      textArea.setAttribute("readonly", "true");
+      textArea.style.position = "fixed";
+      textArea.style.left = "-9999px";
+      textArea.style.top = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textArea);
+      if (!copied) {
+        throw new Error("clipboard_write_failed");
+      }
+    }
+  };
+
+  const findExistingChatGPTTab = () => {
+    return new Promise<chrome.tabs.Tab | null>((resolve, reject) => {
+      chrome.tabs.query({ url: "https://chatgpt.com/*" }, (tabs) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        resolve(tabs[0] || null);
+      });
+    });
+  };
+
+  const focusTab = (tab: chrome.tabs.Tab) => {
+    return new Promise<void>((resolve, reject) => {
+      if (!tab.id) {
+        reject(new Error("tab_not_found"));
+        return;
+      }
+      chrome.tabs.update(tab.id, { active: true }, () => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        if (!tab.windowId) {
+          resolve();
+          return;
+        }
+        chrome.windows.update(tab.windowId, { focused: true }, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve();
+        });
+      });
+    });
+  };
+
+  const openChatGPTTab = async () => {
+    const existingTab = await findExistingChatGPTTab();
+    if (existingTab) {
+      await focusTab(existingTab);
+      return existingTab;
+    }
+    return new Promise<chrome.tabs.Tab>((resolve, reject) => {
+      chrome.tabs.create({ url: "https://chatgpt.com/" }, (tab) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        if (!tab?.id) {
+          reject(new Error("tab_not_created"));
+          return;
+        }
+        resolve(tab);
+      });
+    });
+  };
+
+  const fetchTaskResultText = async (task: TaskItem) => {
+    if (apiBase && serviceToken) {
+      const response = await apiFetch(`/api/tasks/${task.id}/result`);
+      return response.text();
+    }
+    const credentials = await ensureService(true);
+    const response = await fetch(
+      `http://127.0.0.1:${credentials.port}/api/tasks/${task.id}/result`,
+      {
+        headers: {
+          Authorization: `Bearer ${credentials.token}`,
+        },
+      }
+    );
+    if (!response.ok) {
+      const detail = await response.text();
+      throw new Error(detail || t("errors.requestFailed"));
+    }
+    return response.text();
+  };
+
+  const handleSummarizeWithChatGPT = async (task: TaskItem) => {
+    if (guardTourAction()) return;
+    try {
+      const resultText = await fetchTaskResultText(task);
+      const prompt = buildChatGPTSummaryPrompt(task, resultText);
+      await copyTextToClipboard(prompt);
+      await openChatGPTTab().catch(() => {
+        throw new Error(t("errors.chatGPTOpenFailed"));
+      });
+      showToast("success", t("task.copiedForChatGPT"));
+    } catch (error: any) {
+      showToast("error", error?.message || t("errors.chatGPTOpenFailed"));
+    }
+  };
+
   const statusBadge = (status: TaskStatus) => {
     return t(`task.status.${status}`);
   };
@@ -2375,6 +2506,15 @@ const App: React.FC = () => {
                               title={t("task.downloadTxt")}
                             >
                               <DownloadSimple size={18} weight="bold" />
+                            </button>
+                          )}
+                          {displayStatus === "done" && (
+                            <button
+                              onClick={() => handleSummarizeWithChatGPT(task)}
+                              className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all hover:scale-110"
+                              title={t("task.summarizeWithChatGPT")}
+                            >
+                              <Sparkle size={18} weight="bold" />
                             </button>
                           )}
                           <button

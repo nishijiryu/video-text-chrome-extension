@@ -35,7 +35,8 @@
     "cannotConnectService": "Cannot connect to local service",
     "serviceUnavailable": "Local service unavailable",
     "notVideoPage": "Please open a video play page",
-    "nativeHostNotInstalled": "Native host not installed"
+    "nativeHostNotInstalled": "Native host not installed",
+    "chatGPTOpenFailed": "Failed to open ChatGPT"
   },
   "task": {
     "create": "Create Task",
@@ -58,6 +59,8 @@
     "failed": "Task failed",
     "retry": "Retry",
     "downloadTxt": "Download TXT",
+    "summarizeWithChatGPT": "Summarize with ChatGPT",
+    "copiedForChatGPT": "Summary prompt copied. Paste it into the ChatGPT input box.",
     "delete": "Delete",
     "canceled": "Task canceled",
     "noTasks": "No tasks. Open a video page and click \"Create Task\".",
