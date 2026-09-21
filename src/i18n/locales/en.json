@@ -36,7 +36,17 @@
     "serviceUnavailable": "Local service unavailable",
     "notVideoPage": "Please open a video play page",
     "nativeHostNotInstalled": "Native host not installed",
-    "chatGPTOpenFailed": "Failed to open ChatGPT"
+    "chatGPTOpenFailed": "Failed to open ChatGPT",
+    "chatOpenFailed": "Failed to open {{model}}"
+  },
+  "models": {
+    "chatgpt": "ChatGPT",
+    "gemini": "Gemini",
+    "claude": "Claude",
+    "deepseek": "DeepSeek",
+    "kimi": "Kimi",
+    "qwen": "Qwen",
+    "doubao": "Doubao"
   },
   "task": {
     "create": "Create Task",
@@ -61,6 +71,9 @@
     "downloadTxt": "Download TXT",
     "summarizeWithChatGPT": "Summarize with ChatGPT",
     "copiedForChatGPT": "Summary prompt copied. Paste it into the ChatGPT input box.",
+    "chatModelLabel": "Select model",
+    "summarizeWithModel": "Summarize with {{model}}",
+    "copiedForModel": "Summary prompt copied. Paste it into the {{model}} input box.",
     "delete": "Delete",
     "canceled": "Task canceled",
     "noTasks": "No tasks. Open a video page and click \"Create Task\".",

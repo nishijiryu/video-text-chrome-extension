@@ -4,6 +4,15 @@ import ConfirmModal from "./ConfirmModal";
 import UpdateBadge from "../components/UpdateBadge";
 import { startPeriodicCheck, UpdateInfo } from "../services/updateChecker";
 import {
+  CHAT_MODELS,
+  CHAT_MODEL_STORAGE_KEY,
+  DEFAULT_CHAT_MODEL_ID,
+  getChatModel,
+  isChatModelId,
+  type ChatModel,
+  type ChatModelId,
+} from "../models/chatModels";
+import {
   ArrowClockwise,
   CheckCircle,
   ClockCounterClockwise,
@@ -171,6 +180,14 @@ const App: React.FC = () => {
   });
   const [autoConnectEnabled, setAutoConnectEnabled] = useState(true);
   const [animateActiveCount, setAnimateActiveCount] = useState(false);
+  const [chatModelId, setChatModelId] = useState<ChatModelId>(() => {
+    try {
+      const stored = window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY);
+      return isChatModelId(stored) ? stored : DEFAULT_CHAT_MODEL_ID;
+    } catch {
+      return DEFAULT_CHAT_MODEL_ID;
+    }
+  });
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [confirmModalConfig, setConfirmModalConfig] = useState<{
     isOpen: boolean;
@@ -205,6 +222,16 @@ const App: React.FC = () => {
     if (!servicePort) return null;
     return `http://127.0.0.1:${servicePort}`;
   }, [servicePort]);
+
+  const chatModel = useMemo(() => getChatModel(chatModelId), [chatModelId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CHAT_MODEL_STORAGE_KEY, chatModelId);
+    } catch {
+      // localStorage not available
+    }
+  }, [chatModelId]);
 
   const localFileUploadLabel = i18n.language?.startsWith("zh")
     ? "\u672c\u5730\u6587\u4ef6"
@@ -1560,7 +1587,7 @@ const App: React.FC = () => {
     });
   };
 
-  const buildChatGPTSummaryPrompt = (task: TaskItem, resultText: string) => {
+  const buildSummaryPrompt = (task: TaskItem, resultText: string) => {
     return [
       "请总结下面这段视频/音频转写内容，输出：",
       "1. 核心摘要",
@@ -1596,9 +1623,9 @@ const App: React.FC = () => {
     }
   };
 
-  const findExistingChatGPTTab = () => {
+  const findExistingChatTab = (model: ChatModel) => {
     return new Promise<chrome.tabs.Tab | null>((resolve, reject) => {
-      chrome.tabs.query({ url: "https://chatgpt.com/*" }, (tabs) => {
+      chrome.tabs.query({ url: model.urlPattern }, (tabs) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
           return;
@@ -1634,14 +1661,14 @@ const App: React.FC = () => {
     });
   };
 
-  const openChatGPTTab = async () => {
-    const existingTab = await findExistingChatGPTTab();
+  const openChatTab = async (model: ChatModel) => {
+    const existingTab = await findExistingChatTab(model);
     if (existingTab) {
       await focusTab(existingTab);
       return existingTab;
     }
     return new Promise<chrome.tabs.Tab>((resolve, reject) => {
-      chrome.tabs.create({ url: "https://chatgpt.com/" }, (tab) => {
+      chrome.tabs.create({ url: model.chatUrl }, (tab) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
           return;
@@ -1676,18 +1703,27 @@ const App: React.FC = () => {
     return response.text();
   };
 
-  const handleSummarizeWithChatGPT = async (task: TaskItem) => {
+  const handleSummarizeWithModel = async (task: TaskItem) => {
     if (guardTourAction()) return;
+    const targetModel = chatModel;
     try {
       const resultText = await fetchTaskResultText(task);
-      const prompt = buildChatGPTSummaryPrompt(task, resultText);
+      const prompt = buildSummaryPrompt(task, resultText);
       await copyTextToClipboard(prompt);
-      await openChatGPTTab().catch(() => {
-        throw new Error(t("errors.chatGPTOpenFailed"));
+      await openChatTab(targetModel).catch(() => {
+        throw new Error(
+          t("errors.chatOpenFailed", { model: targetModel.name })
+        );
       });
-      showToast("success", t("task.copiedForChatGPT"));
+      showToast(
+        "success",
+        t("task.copiedForModel", { model: targetModel.name })
+      );
     } catch (error: any) {
-      showToast("error", error?.message || t("errors.chatGPTOpenFailed"));
+      showToast(
+        "error",
+        error?.message || t("errors.chatOpenFailed", { model: targetModel.name })
+      );
     }
   };
 
@@ -2038,6 +2074,22 @@ const App: React.FC = () => {
               className="hidden"
               onChange={handleLocalFileChange}
             />
+            <select
+              value={chatModelId}
+              onChange={(event) =>
+                setChatModelId(event.target.value as ChatModelId)
+              }
+              disabled={isAdding || nativeHostInstalled === false}
+              title={t("task.chatModelLabel")}
+              aria-label={t("task.chatModelLabel")}
+              className="max-w-[104px] cursor-pointer truncate rounded-2xl border border-slate-200 bg-white px-2 py-2.5 text-xs font-bold text-slate-600 shadow-sm outline-none transition-all duration-300 hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {CHAT_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {t(model.labelKey, { defaultValue: model.name })}
+                </option>
+              ))}
+            </select>
           </div>
           <button
             onClick={handleClearQueue}
@@ -2510,9 +2562,11 @@ const App: React.FC = () => {
                           )}
                           {displayStatus === "done" && (
                             <button
-                              onClick={() => handleSummarizeWithChatGPT(task)}
+                              onClick={() => handleSummarizeWithModel(task)}
                               className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all hover:scale-110"
-                              title={t("task.summarizeWithChatGPT")}
+                              title={t("task.summarizeWithModel", {
+                                model: chatModel.name,
+                              })}
                             >
                               <Sparkle size={18} weight="bold" />
                             </button>
