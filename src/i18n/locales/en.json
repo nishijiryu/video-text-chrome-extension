@@ -37,7 +37,8 @@
     "notVideoPage": "Please open a video play page",
     "nativeHostNotInstalled": "Native host not installed",
     "chatGPTOpenFailed": "Failed to open ChatGPT",
-    "chatOpenFailed": "Failed to open {{model}}"
+    "chatOpenFailed": "Failed to open {{model}}",
+    "cookieCollectFailed": "Could not read browser login cookies, the download may fail; please sign in on that site and retry"
   },
   "models": {
     "chatgpt": "ChatGPT",
@@ -184,7 +185,8 @@
     "completeFirst": "Please complete the guide first"
   },
   "toast": {
-    "serviceStopped": "Service stopped"
+    "serviceStopped": "Service stopped",
+    "cookieRecovered": "Login cookies refreshed, retrying automatically"
   },
   "welcome": {
     "title": "Welcome to Video Text Assistant 🎬",

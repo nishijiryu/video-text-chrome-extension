@@ -95,7 +95,7 @@ interface DiagnosticStep {
   status: DiagnosticStatus;
 }
 
-type ToastKind = "info" | "error" | "success";
+type ToastKind = "info" | "error" | "success" | "warning";
 
 interface ToastItem {
   id: string;
@@ -217,6 +217,8 @@ const App: React.FC = () => {
   const createButtonRef = useRef<HTMLButtonElement | null>(null);
   const listAreaRef = useRef<HTMLDivElement | null>(null);
   const clearQueueRef = useRef<HTMLButtonElement | null>(null);
+  // 记录已尝试过“补采 cookie 并自动重试”的任务，避免失败后无限重试
+  const autoCookieRecoveredIdsRef = useRef<Set<string>>(new Set());
 
   const apiBase = useMemo(() => {
     if (!servicePort) return null;
@@ -391,6 +393,42 @@ const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [taskStats.inProgress]);
+
+  // 后端因缺少登录态（如 B 站 HTTP 412）判定为 cookies_required 时，
+  // 自动补采一次浏览器 cookie 并重试，免去用户手动点刷新。
+  useEffect(() => {
+    const pending = tasks.filter(
+      (task) =>
+        task.errorCode === "cookies_required" &&
+        !autoCookieRecoveredIdsRef.current.has(task.id)
+    );
+    if (pending.length === 0) return;
+    let disposed = false;
+
+    const recover = async () => {
+      for (const task of pending) {
+        autoCookieRecoveredIdsRef.current.add(task.id);
+        try {
+          const cookies = await collectCookiesRef.current(task.url);
+          if (!cookies.length) continue;
+          await apiFetch(`/api/tasks/${task.id}/cookies`, {
+            method: "POST",
+            body: JSON.stringify(cookies),
+          });
+          await apiFetch(`/api/tasks/${task.id}/retry`, { method: "POST" });
+          if (disposed) return;
+          showToastRef.current("info", tRef.current("toast.cookieRecovered"), 3000);
+        } catch {
+          // 自动恢复失败不打扰用户，仍可手动点刷新
+        }
+      }
+    };
+
+    void recover();
+    return () => {
+      disposed = true;
+    };
+  }, [tasks, apiBase, serviceToken]);
 
   useEffect(() => {
     if (!tourMode) return;
@@ -1051,9 +1089,13 @@ const App: React.FC = () => {
     "www.youtube.com": "youtube.com",
     "m.youtube.com": "youtube.com",
     "youtu.be": "youtube.com",
+    "b23.tv": "bilibili.com",
     "bilibili.com": "bilibili.com",
     "www.bilibili.com": "bilibili.com",
     "m.bilibili.com": "bilibili.com",
+    "live.bilibili.com": "bilibili.com",
+    "space.bilibili.com": "bilibili.com",
+    "www.bilibili.tv": "bilibili.tv",
   };
 
   const collectCookies = (url: string) => {
@@ -1069,6 +1111,17 @@ const App: React.FC = () => {
       });
     });
   };
+
+  // 供 auto-cookie-recovery effect 使用的最新引用（API 接口需要直接传函数引用）
+  const collectCookiesRef = useRef(collectCookies);
+  const showToastRef = useRef<(kind: ToastKind, message: string, duration?: number) => void>(() => {});
+  const tRef = useRef(t);
+  if (collectCookiesRef.current !== collectCookies) {
+    collectCookiesRef.current = collectCookies;
+  }
+  if (tRef.current !== t) {
+    tRef.current = t;
+  }
 
   const closeToast = (id: string) => {
     setToasts((prev) =>
@@ -1094,6 +1147,9 @@ const App: React.FC = () => {
     const exitTimer = window.setTimeout(() => closeToast(id), duration);
     toastTimersRef.current.set(id, [exitTimer]);
   };
+  if (showToastRef.current !== showToast) {
+    showToastRef.current = showToast;
+  }
 
   const hideOverlay = (delayMs = 0) => {
     if (overlayTimerRef.current) {
@@ -1226,7 +1282,13 @@ const App: React.FC = () => {
       try {
         cookies = await collectCookies(url);
       } catch (err) {
+        // 之前这里只打 console，用户完全看不到，任务会以“匿名”状态发出去，
+        // B 站等站点会直接返回 HTTP 412 并且看起来像是无故失败。
         console.warn("Failed to collect cookies:", err);
+        showToast("warning", t("errors.cookieCollectFailed"));
+      }
+      if (cookies.length === 0) {
+        console.warn("No cookies collected for", url);
       }
 
       const payload = {
@@ -2672,7 +2734,7 @@ const App: React.FC = () => {
             }
           >
             <div className="toast-body">
-              {toast.kind === "error" ? (
+              {toast.kind === "error" || toast.kind === "warning" ? (
                 <WarningCircle size={16} />
               ) : toast.kind === "success" ? (
                 <CheckCircle size={16} />

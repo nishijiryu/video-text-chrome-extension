@@ -320,6 +320,11 @@ body {
   color: #4f46e5;
 }
 
+.toast-warning .toast-body svg,
+.toast-warning .toast-text {
+  color: #b45309;
+}
+
 .toast-error .toast-progress {
   background: #fb7185;
 }
@@ -330,6 +335,10 @@ body {
 
 .toast-info .toast-progress {
   background: #818cf8;
+}
+
+.toast-warning .toast-progress {
+  background: #fbbf24;
 }
 
 @keyframes tourPopIn {

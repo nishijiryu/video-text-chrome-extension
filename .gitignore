@@ -33,3 +33,6 @@ RESUBMISSION_GUIDE.md
 .DS_Store
 release
 AGENTS.md
+
+# 本地 PyInstaller 构建输出（native-host/dist 因 ACL 不可写时的替代输出目录）
+build-out/

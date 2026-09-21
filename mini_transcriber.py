@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 # Version information
-SERVICE_VERSION = "1.0.7"  # Update this when releasing new native host versions
+SERVICE_VERSION = "1.0.8"  # Update this when releasing new native host versions
 
 # Default to 4 threads for better performance, or limited by system cores
 default_threads = "4"
@@ -459,8 +459,53 @@ def _needs_cookies(message: str) -> bool:
         "age",
         "verification",
         "vip",
+        # B 站等站点在缺少登录态时直接返回 412，且不会给出任何“需要登录”的提示
+        "412",
+        "precondition failed",
     ]
     return any(keyword in lowered for keyword in keywords)
+
+
+# 瞬时下载错误：与登录态无关，等待后重试通常即可恢复
+_TRANSIENT_DOWNLOAD_ERRORS = (
+    "412",
+    "precondition failed",
+    "timed out",
+    "timeout",
+    "connection reset",
+    "connection aborted",
+    "connection refused",
+    "temporary failure",
+    "remote end closed",
+    "502",
+    "503",
+    "504",
+)
+
+# yt-dlp 会把某些错误包一层，直接回显给用户体验很差，这里做一次友好化
+_USER_FACING_DOWNLOAD_HINTS = (
+    ("412", "站点要求登录校验（HTTP 412），请先在同一浏览器登录该站点账号后重试"),
+    ("precondition failed", "站点要求登录校验（HTTP 412），请先在同一浏览器登录该站点账号后重试"),
+    ("403", "站点拒绝了请求（HTTP 403），可能需要登录账号或该内容仅会员可见"),
+    ("404", "视频不存在或已被删除（HTTP 404）"),
+    ("private", "该内容为私享/会员内容，需要登录对应账号"),
+    ("members", "该内容为会员内容，需要登录对应账号"),
+    ("sign in", "需要登录后才能下载该内容"),
+)
+
+
+def _is_transient_download_error(message: str) -> bool:
+    lowered = message.lower()
+    return any(keyword in lowered for keyword in _TRANSIENT_DOWNLOAD_ERRORS)
+
+
+def _humanize_download_error(message: str) -> str:
+    lowered = message.lower()
+    detail = message if len(message) <= 300 else message[:300] + "…"
+    for needle, hint in _USER_FACING_DOWNLOAD_HINTS:
+        if needle in lowered:
+            return f"下载音频失败: {hint}（原始错误：{detail}）"
+    return f"下载音频失败: {detail}"
 
 
 def _task_public_view(task: Dict[str, Any], queue_positions: Dict[str, int]) -> Dict[str, Any]:
@@ -1073,6 +1118,32 @@ def _download_audio(task_id: str, url: str, cookiefile: Optional[str]) -> Path:
 
     has_cookiefile = cookiefile and os.path.exists(cookiefile)
 
+    # yt-dlp treats HTTP 412 / timeouts as fatal, so a single risk-control hiccup used to
+    # fail the whole task until the user pressed retry manually. Retry transient errors
+    # here with backoff; cookies are re-read from disk on every attempt.
+    download_retries = max(0, int(os.getenv("TRANSCRIBER_DOWNLOAD_RETRIES", "2")))
+    retry_delay_seconds = max(0.0, float(os.getenv("TRANSCRIBER_DOWNLOAD_RETRY_DELAY", "3")))
+
+    def attempt(opts: Dict[str, Any], label: str, strategy: str) -> Path:
+        # cookiefile 由 yt-dlp 访问时会校验/回写，每次尝试都应重新从磁盘读取
+        for index in range(download_retries + 1):
+            attempt_label = label if index == 0 else f"{label} retry#{index}"
+            try:
+                return _run_yt_dlp(url, opts, task_id)
+            except TaskCancelled:
+                raise
+            except Exception as exc:
+                message = str(exc)
+                if index >= download_retries or not _is_transient_download_error(message):
+                    raise
+                delay = retry_delay_seconds * (index + 1)
+                _log(
+                    f"YTDLP: {attempt_label} transient failure ({message[:160]}), "
+                    f"retrying in {delay:.1f}s (strategy={strategy})"
+                )
+                time.sleep(delay)
+        raise RuntimeError("下载音频失败: 重试次数已用尽")
+
     # Strategy 1: Try with cookies if available
     if has_cookiefile:
         try:
@@ -1085,7 +1156,9 @@ def _download_audio(task_id: str, url: str, cookiefile: Optional[str]) -> Path:
                 # No Node: mobile clients are the best fallback (no EJS), but may need PO Token.
                 opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios"]}}
                 _log(f"YTDLP: Trying with cookies + mobile clients for task={task_id}")
-            return _run_yt_dlp(url, opts, task_id)
+            return attempt(opts, "cookies", "cookies")
+        except TaskCancelled:
+            raise
         except Exception as exc1:
             _log(f"YTDLP: Failed with cookies ({exc1}), retrying without cookies")
             # Fall through to strategy 2
@@ -1099,9 +1172,11 @@ def _download_audio(task_id: str, url: str, cookiefile: Optional[str]) -> Path:
         else:
             opts["extractor_args"] = {"youtube": {"player_client": ["android", "ios"]}}
             _log(f"YTDLP: Using android/ios clients without cookies for task={task_id}")
-        return _run_yt_dlp(url, opts, task_id)
+        return attempt(opts, "no-cookie", "no-cookie")
+    except TaskCancelled:
+        raise
     except Exception as exc2:
-        raise RuntimeError(f"下载音频失败: {exc2}")
+        raise RuntimeError(_humanize_download_error(str(exc2)))
 
 
 def _transcribe_audio(task_id: str, audio_path: Path) -> str:

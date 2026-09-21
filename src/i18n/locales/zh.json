@@ -37,7 +37,8 @@
     "notVideoPage": "请先打开视频播放页面",
     "nativeHostNotInstalled": "未安装本地服务",
     "chatGPTOpenFailed": "打开 ChatGPT 失败",
-    "chatOpenFailed": "打开 {{model}} 失败"
+    "chatOpenFailed": "打开 {{model}} 失败",
+    "cookieCollectFailed": "未能读取浏览器登录 Cookie，下载可能失败；请确认已在该站点登录后重试"
   },
   "models": {
     "chatgpt": "ChatGPT",
@@ -187,7 +188,8 @@
     "completeFirst": "请先完成引导"
   },
   "toast": {
-    "serviceStopped": "已停止本地服务"
+    "serviceStopped": "已停止本地服务",
+    "cookieRecovered": "已补全登录信息并自动重试"
   },
   "welcome": {
     "title": "欢迎使用视频转文字助手 🎬",
