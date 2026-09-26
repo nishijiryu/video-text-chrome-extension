@@ -81,6 +81,44 @@ def _log_slow(label: str, start: float, extra: str = "") -> None:
         suffix = f" {extra}".strip()
         _log(f"SLOW {label} elapsed={elapsed:.2f}s {suffix}".strip())
 
+
+def _sanitize_no_proxy_env() -> None:
+    """Normalize NO_PROXY so httpx can build its proxy mount patterns.
+
+    httpx 0.28 cannot parse a bracketed IPv6 literal such as "[::1]": it builds
+    the pattern "all://*[::1]", splits it into an empty host plus the port
+    ":1]" and raises ``InvalidURL: Invalid port: ':1]'`` while constructing
+    ``httpx.Client()``. faster-whisper -> huggingface_hub create such a client
+    when the Whisper model is initialized, so one malformed entry in NO_PROXY
+    (usually exported by a proxy/VPN tool) fails every transcription right
+    after the audio download finishes.
+    """
+    for key in ("NO_PROXY", "no_proxy"):
+        raw = os.environ.get(key)
+        if not raw:
+            continue
+        cleaned: List[str] = []
+        dropped: List[str] = []
+        for token in raw.split(","):
+            token = token.strip()
+            if not token:
+                continue
+            if token.startswith("[") and token.endswith("]"):
+                token = token[1:-1].strip()
+            if not token or "[" in token or "]" in token:
+                dropped.append(token or "[]")
+                continue
+            if token not in cleaned:
+                cleaned.append(token)
+        sanitized = ",".join(cleaned)
+        if sanitized != raw:
+            os.environ[key] = sanitized
+            _log(
+                f"NO_PROXY_SANITIZED key={key} dropped={dropped} "
+                f"before={raw!r} after={sanitized!r}"
+            )
+
+
 MODEL_SIZE = os.getenv("WHISPER_MODEL", "base")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE = os.getenv("WHISPER_COMPUTE", "int8")
@@ -99,6 +137,9 @@ _log(
     "SERVICE_START "
     f"pid={os.getpid()} base_dir={BASE_DIR} temp_dir={TEMP_DIR} port={SERVICE_PORT}"
 )
+
+# Must run before any library creates an httpx client (Whisper/huggingface_hub).
+_sanitize_no_proxy_env()
 
 if not SERVICE_TOKEN:
     SERVICE_TOKEN = uuid.uuid4().hex
