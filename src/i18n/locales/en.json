@@ -3,6 +3,31 @@
     "title": "Task Center",
     "subtitle": "Local Queue"
   },
+  "template": {
+    "button": "Template",
+    "buttonTitle": "Edit summary prompt template",
+    "title": "Summary prompt template",
+    "description": "Click a variable to insert it at the cursor; variables are replaced with this task's content when summarizing.",
+    "placeholder": "Edit the prompt template…",
+    "variables": {
+      "title": "Title",
+      "url": "Source",
+      "transcript": "Transcript"
+    },
+    "showPreview": "Preview",
+    "hidePreview": "Hide preview",
+    "restoreDefault": "Restore default",
+    "save": "Save",
+    "cancel": "Cancel",
+    "saved": "Template saved",
+    "errorEmpty": "Template cannot be empty",
+    "errorMissingTranscript": "Template must include {{variable}}, otherwise the transcript is omitted",
+    "preview": {
+      "titleValue": "How I learned video editing in three months",
+      "urlValue": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "transcriptValue": "(the full transcript of this task is inserted here)"
+    }
+  },
   "service": {
     "connected": "Service Connected",
     "connecting": "Connecting",

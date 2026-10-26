@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import ConfirmModal from "./ConfirmModal";
+import TemplateModal from "./TemplateModal";
 import UpdateBadge from "../components/UpdateBadge";
 import { startPeriodicCheck, UpdateInfo } from "../services/updateChecker";
 import {
@@ -12,6 +13,12 @@ import {
   type ChatModel,
   type ChatModelId,
 } from "../models/chatModels";
+import {
+  DEFAULT_SUMMARY_TEMPLATE,
+  loadSummaryTemplate,
+  persistSummaryTemplate,
+  renderSummaryTemplate,
+} from "../models/summaryTemplate";
 import {
   ArrowClockwise,
   CheckCircle,
@@ -35,6 +42,7 @@ import {
   Plus,
   Power,
   Sparkle,
+  TextAa,
   Trash,
   UploadSimple,
   WarningCircle,
@@ -188,6 +196,10 @@ const App: React.FC = () => {
       return DEFAULT_CHAT_MODEL_ID;
     }
   });
+  const [summaryTemplate, setSummaryTemplate] = useState<string>(() =>
+    loadSummaryTemplate()
+  );
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [confirmModalConfig, setConfirmModalConfig] = useState<{
     isOpen: boolean;
@@ -1650,18 +1662,20 @@ const App: React.FC = () => {
   };
 
   const buildSummaryPrompt = (task: TaskItem, resultText: string) => {
-    return [
-      "请总结下面这段视频/音频转写内容，输出：",
-      "1. 核心摘要",
-      "2. 内容详细总结",
-      "3. 简单评价",
-      "",
-      `标题：${task.title || ""}`,
-      `来源：${task.url || ""}`,
-      "",
-      "转写内容：",
-      resultText,
-    ].join("\n");
+    return renderSummaryTemplate(summaryTemplate, {
+      title: task.title || "",
+      url: task.url || "",
+      transcript: resultText,
+    });
+  };
+
+  const handleSaveSummaryTemplate = (next: string) => {
+    const template = next.trim().length > 0 ? next : DEFAULT_SUMMARY_TEMPLATE;
+    // 只有用户主动保存才落盘，未自定义时始终跟随默认模板
+    persistSummaryTemplate(template);
+    setSummaryTemplate(template);
+    setTemplateModalOpen(false);
+    showToast("success", t("template.saved"));
   };
 
   const copyTextToClipboard = async (text: string) => {
@@ -1822,7 +1836,7 @@ const App: React.FC = () => {
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-violet-200/50 rounded-full blur-[80px]" />
       </div>
 
-      <header className="px-6 py-6 bg-white/80 backdrop-blur-xl border-b border-white/40 flex items-center justify-between sticky top-0 z-20">
+      <header className="px-6 py-6 bg-white/80 backdrop-blur-xl border-b border-white/40 flex flex-wrap items-center justify-between gap-y-2 sticky top-0 z-20">
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-black tracking-tight text-slate-900 whitespace-nowrap">
@@ -1867,7 +1881,16 @@ const App: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-1 gap-y-1 ml-auto">
+          <button
+            onClick={() => setTemplateModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-500 rounded-lg hover:bg-slate-200/50 hover:text-slate-800 transition-all"
+            title={t("template.buttonTitle")}
+          >
+            <TextAa size={14} />
+            <span>{t("template.button")}</span>
+          </button>
+
           <button
             onClick={() => {
               const isZh = i18n.language.startsWith("zh");
@@ -2753,6 +2776,13 @@ const App: React.FC = () => {
           </div>
         ))}
       </div>
+
+      <TemplateModal
+        isOpen={templateModalOpen}
+        value={summaryTemplate}
+        onClose={() => setTemplateModalOpen(false)}
+        onSave={handleSaveSummaryTemplate}
+      />
 
       <ConfirmModal
         isOpen={confirmModalConfig.isOpen}

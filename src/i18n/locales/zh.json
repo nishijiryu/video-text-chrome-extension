@@ -3,6 +3,31 @@
     "title": "任务中心",
     "subtitle": "管理您的转写任务"
   },
+  "template": {
+    "button": "模板",
+    "buttonTitle": "编辑总结提示词模板",
+    "title": "总结提示词模板",
+    "description": "点击变量可插入到光标处；总结时变量会替换成该任务的内容。",
+    "placeholder": "在这里编辑提示词模板…",
+    "variables": {
+      "title": "标题",
+      "url": "来源",
+      "transcript": "转写内容"
+    },
+    "showPreview": "预览效果",
+    "hidePreview": "收起预览",
+    "restoreDefault": "恢复默认",
+    "save": "保存",
+    "cancel": "取消",
+    "saved": "模板已保存",
+    "errorEmpty": "模板内容不能为空",
+    "errorMissingTranscript": "模板需要包含 {{variable}}，否则总结时不会带上转写内容",
+    "preview": {
+      "titleValue": "如何用三个月学会视频剪辑",
+      "urlValue": "https://www.bilibili.com/video/BV1xx411c7mD",
+      "transcriptValue": "（这里会替换成该任务完整的转写文本）"
+    }
+  },
   "service": {
     "connected": "服务已连接",
     "connecting": "连接中",

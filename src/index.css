@@ -701,3 +701,15 @@ body {
 .confirm-modal-button-confirm:active {
   transform: scale(0.96) translateY(0);
 }
+
+/* 总结提示词模板编辑弹窗：复用确认弹窗的遮罩与动画，仅调整尺寸与排布 */
+.template-modal-container {
+  width: 92%;
+  max-width: 640px;
+  max-height: 88vh;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
